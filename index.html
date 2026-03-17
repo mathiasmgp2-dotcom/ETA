@@ -405,6 +405,16 @@
             50% { opacity: 0.5; }
         }
 
+        .debug-info {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-size: 0.8em;
+            color: #666;
+            font-family: monospace;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 15px;
@@ -442,24 +452,25 @@
             <h3>📋 Como usar:</h3>
             <ul>
                 <li>Cole os dados do Excel no formato: BOOKING/ARMADOR/CONTAINER/NAVIO</li>
-                <li>Os dados devem estar concatenados (sem espaços entre as colunas)</li>
-                <li>Exemplo: <code>241ISZ2528034MSCMSDU9826591MSC LUDOVICA</code></li>
-                <li>O sistema identifica automaticamente: Booking (12 chars) / Armador (3 chars) / Container (11 chars) / Nome do Navio (resto)</li>
+                <li>O sistema identifica automaticamente os campos por padrões</li>
+                <li>Booking: código alfanumérico (tamanho variável)</li>
+                <li>Armador: MSC, CMA CGM, HAPAG LLOYD, HMM, PIL, COSCO, etc.</li>
+                <li>Container: 4 letras + 7 números (padrão ISO)</li>
             </ul>
         </div>
 
         <div class="input-section">
             <h2>Input de Dados</h2>
             <textarea id="dataInput" placeholder="Cole aqui os dados do Excel...
-Exemplo:
+Exemplos:
 241ISZ2528034MSCMSDU9826591MSC LUDOVICA
 SSZ1738224CMA CGMCGMU5105732SWANSEA
 6431520260COSCOOERU4120153INSIGHTS
 SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
             
             <div class="example">
-                <strong>Formato esperado:</strong> BOOKING(12) + ARMADOR(3) + CONTAINER(11) + NAVIO(resto)<br>
-                Total mínimo: 26 caracteres por linha
+                <strong>Formato:</strong> BOOKING + ARMADOR + CONTAINER(11 chars) + NAVIO<br>
+                <strong>Container:</strong> 4 letras + 7 números (ex: MSDU9826591, CGMU5105732)
             </div>
 
             <div class="btn-container">
@@ -497,6 +508,14 @@ SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
         let foundShips = new Map();
         let contracts = [];
 
+        // Lista de armadores conhecidos (com nomes compostos primeiro para matching correto)
+        const ARMADORES = [
+            'HAPAG LLOYD', 'CMA CGM', 'MSC', 'COSCO', 'HMM', 'PIL', 'MAERSK', 
+            'ONE', 'EVERGREEN', 'YANG MING', 'HYUNDAI', 'ZIM', 'OOCL', 'APL',
+            'HAMBURG SUD', 'HAPAG', 'LLOYD', 'UASC', 'CSAV', 'CCNI', 'K LINE',
+            'MOL', 'NYK', 'SAFMARINE', 'SEALAND', 'HAPAG-LLOYD'
+        ];
+
         // Conectar ao WebSocket
         function connectWebSocket() {
             updateWSStatus('connecting', 'Conectando...');
@@ -521,7 +540,6 @@ SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
                 
                 ws.onclose = function() {
                     updateWSStatus('disconnected', 'Desconectado');
-                    // Tentar reconectar após 5 segundos
                     setTimeout(connectWebSocket, 5000);
                 };
             } catch (error) {
@@ -544,7 +562,6 @@ SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
                 const shipName = shipData.Name ? shipData.Name.trim() : '';
                 const metadata = data.MetaData || {};
                 
-                // Procurar navios que estamos tracking
                 for (let [searchName, contractId] of trackingShips) {
                     if (shipName.toUpperCase().includes(searchName.toUpperCase()) || 
                         searchName.toUpperCase().includes(shipName.toUpperCase())) {
@@ -571,17 +588,13 @@ SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
                         
                         foundShips.set(contractId, shipInfo);
                         updateContractCard(contractId, shipInfo);
-                        
-                        // Remover do tracking
                         trackingShips.delete(searchName);
                     }
                 }
             }
             
-            // Também processar PositionReport para atualizar posição
             if (data.MessageType === 'PositionReport' && data.MetaData) {
                 const mmsi = data.MetaData.MMSI;
-                // Atualizar posição se já temos o navio
                 for (let [contractId, shipInfo] of foundShips) {
                     if (shipInfo.mmsi === mmsi) {
                         shipInfo.position = {
@@ -624,29 +637,127 @@ SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
             return types[type] || 'Desconhecido';
         }
 
+        // Função para encontrar container (4 letras + 7 números)
+        function findContainer(str) {
+            // Regex para container: 4 letras seguidas de 7 números
+            const regex = /[A-Z]{4}\d{7}/;
+            const match = str.match(regex);
+            if (match) {
+                return {
+                    container: match[0],
+                    index: match.index
+                };
+            }
+            return null;
+        }
+
+        // Função para encontrar armador
+        function findArmador(str) {
+            const upperStr = str.toUpperCase();
+            
+            // Ordenar armadores por tamanho (maior primeiro) para evitar match parcial
+            const sortedArmadores = [...ARMADORES].sort((a, b) => b.length - a.length);
+            
+            for (let armador of sortedArmadores) {
+                const idx = upperStr.indexOf(armador);
+                if (idx !== -1) {
+                    return {
+                        armador: armador,
+                        index: idx,
+                        endIndex: idx + armador.length
+                    };
+                }
+            }
+            return null;
+        }
+
         function parseInputData(input) {
             const lines = input.trim().split('\n');
             const parsed = [];
             
             for (let line of lines) {
                 line = line.trim();
-                if (line.length < 26) continue; // Mínimo: 12+3+11
+                if (line.length < 20) continue;
                 
-                // Extrair campos baseado no tamanho
-                const booking = line.substring(0, 12);
-                const armador = line.substring(12, 15);
-                const container = line.substring(15, 26);
-                const navio = line.substring(26).trim();
+                // 1. Encontrar container (âncora fixa - sempre 11 caracteres)
+                const containerInfo = findContainer(line);
+                if (!containerInfo) {
+                    console.warn('Container não encontrado na linha:', line);
+                    continue;
+                }
                 
-                if (booking && armador && container && navio) {
+                const container = containerInfo.container;
+                const containerStart = containerInfo.index;
+                
+                // 2. Encontrar armador (pode vir antes ou depois do booking)
+                const armadorInfo = findArmador(line);
+                let armador = 'N/A';
+                let armadorEnd = -1;
+                
+                if (armadorInfo) {
+                    armador = armadorInfo.armador;
+                    armadorEnd = armadorInfo.endIndex;
+                }
+                
+                // 3. Identificar booking e navio
+                let booking = '';
+                let navio = '';
+                
+                // Estratégia: O booking geralmente vem antes do armador ou antes do container
+                // O navio geralmente vem depois do container
+                
+                if (armadorInfo && armadorInfo.index < containerStart) {
+                    // Armador vem antes do container
+                    // Booking vem antes do armador
+                    booking = line.substring(0, armadorInfo.index).trim();
+                    
+                    // Navio vem depois do container (até o final)
+                    navio = line.substring(containerStart + 11).trim();
+                } else {
+                    // Armador não encontrado ou vem depois
+                    // Assumir que booking vem antes do container
+                    booking = line.substring(0, containerStart).trim();
+                    
+                    // Remover armador do booking se estiver lá
+                    if (armadorInfo && booking.includes(armador)) {
+                        booking = booking.replace(armador, '').trim();
+                    }
+                    
+                    // Navio vem depois do container
+                    let navioPart = line.substring(containerStart + 11).trim();
+                    
+                    // Se armador estiver depois do container, separar do navio
+                    if (armadorInfo && armadorInfo.index > containerStart) {
+                        // Armador está entre container e navio ou no navio
+                        navio = navioPart;
+                    } else {
+                        navio = navioPart;
+                    }
+                }
+                
+                // Limpar booking (remover possíveis resíduos do armador)
+                if (armador !== 'N/A') {
+                    booking = booking.replace(new RegExp(armador, 'gi'), '').trim();
+                }
+                
+                // Se booking estiver vazio, tentar extrair do início até o armador
+                if (!booking && armadorInfo) {
+                    booking = line.substring(0, armadorInfo.index).trim();
+                }
+                
+                // Validar dados mínimos
+                if (booking && container && navio) {
                     parsed.push({
                         id: 'CTR-' + (parsed.length + 1).toString().padStart(3, '0'),
                         booking: booking,
                         armador: armador,
                         container: container,
                         navio: navio,
-                        searchName: navio.toUpperCase()
+                        searchName: navio.toUpperCase(),
+                        raw: line // para debug
                     });
+                } else {
+                    console.warn('Dados incompletos:', {booking, armador, container, navio, line});
                 }
             }
             
@@ -664,7 +775,6 @@ SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
                 return;
             }
             
-            // Parsear dados
             contracts = parseInputData(input);
             
             if (contracts.length === 0) {
@@ -672,17 +782,14 @@ SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
                 return;
             }
             
-            // Mostrar progresso
             progressBar.style.display = 'block';
             statusDiv.style.display = 'block';
             statusDiv.className = 'status loading';
             statusDiv.innerHTML = '<div class="spinner"></div> Processando ' + contracts.length + ' contratos...';
             
-            // Limpar anteriores
             trackingShips.clear();
             foundShips.clear();
             
-            // Criar cards
             const grid = document.getElementById('contractsGrid');
             grid.innerHTML = '';
             
@@ -690,24 +797,19 @@ SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
                 const card = createContractCard(contract);
                 grid.appendChild(card);
                 
-                // Adicionar ao tracking
                 trackingShips.set(contract.searchName, contract.id);
                 
-                // Atualizar progresso
                 setTimeout(() => {
                     const progress = ((index + 1) / contracts.length) * 100;
                     progressFill.style.width = progress + '%';
                 }, index * 100);
             });
             
-            // Mostrar resultados
             document.getElementById('resultsSection').style.display = 'block';
             document.getElementById('noResults').style.display = 'none';
             
-            // Iniciar busca na API
             subscribeToShips();
             
-            // Verificar após 30 segundos
             setTimeout(() => {
                 checkMissingShips();
             }, 30000);
@@ -755,6 +857,10 @@ SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
                     Posição: <span id="coords-${contract.id}">--</span><br>
                     Última atualização: <span id="time-${contract.id}">--</span>
                 </div>
+                
+                <div class="debug-info">
+                    Raw: ${contract.raw.substring(0, 50)}${contract.raw.length > 50 ? '...' : ''}
+                </div>
             `;
             
             return card;
@@ -799,7 +905,6 @@ SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
                 showStatus('Conectando ao serviço de rastreamento...', 'info');
                 connectWebSocket();
                 
-                // Tentar novamente após conectar
                 setTimeout(() => {
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         sendSubscription();
@@ -811,7 +916,6 @@ SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
         }
 
         function sendSubscription() {
-            // AISStream requer bounding box. Usamos o mundo todo para buscar global
             const subscription = {
                 APIKey: API_KEY,
                 BoundingBoxes: [[[-90, -180], [90, 180]]],
@@ -887,12 +991,10 @@ SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE`;
             showStatus('Exemplo carregado! Clique em "Buscar Informações" para processar.', 'info');
         }
 
-        // Iniciar conexão ao carregar
         window.onload = function() {
             connectWebSocket();
         };
 
-        // Limpar ao fechar
         window.onbeforeunload = function() {
             if (ws) {
                 ws.close();
