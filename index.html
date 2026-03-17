@@ -60,10 +60,6 @@
             gap: 10px;
         }
 
-        .input-section h2::before {
-            content: "📋";
-        }
-
         textarea {
             width: 100%;
             min-height: 120px;
@@ -107,7 +103,6 @@
             cursor: pointer;
             transition: all 0.3s;
             text-transform: uppercase;
-            letter-spacing: 1px;
         }
 
         .btn-primary {
@@ -116,9 +111,14 @@
             box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         }
 
-        .btn-primary:hover {
+        .btn-primary:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
 
         .btn-secondary {
@@ -180,22 +180,6 @@
             to { transform: rotate(360deg); }
         }
 
-        .results-section {
-            margin-top: 30px;
-        }
-
-        .results-section h2 {
-            color: #1e3c72;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .results-section h2::before {
-            content: "🚢";
-        }
-
         .contracts-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
@@ -239,20 +223,10 @@
             text-transform: uppercase;
         }
 
-        .status-tracking {
-            background: #e3f2fd;
-            color: #1565c0;
-        }
-
-        .status-found {
-            background: #e8f5e9;
-            color: #2e7d32;
-        }
-
-        .status-error {
-            background: #ffebee;
-            color: #c62828;
-        }
+        .status-waiting { background: #fff3e0; color: #ef6c00; }
+        .status-searching { background: #e3f2fd; color: #1565c0; }
+        .status-found { background: #e8f5e9; color: #2e7d32; }
+        .status-error { background: #ffebee; color: #c62828; }
 
         .info-row {
             display: flex;
@@ -278,7 +252,7 @@
         .ship-name {
             font-size: 1.3em;
             color: #1e3c72;
-            margin-bottom: 5px;
+            margin-bottom: 10px;
         }
 
         .eta-highlight {
@@ -303,66 +277,7 @@
             margin-top: 5px;
         }
 
-        .position-info {
-            background: #f5f5f5;
-            padding: 10px;
-            border-radius: 8px;
-            margin-top: 10px;
-            font-family: monospace;
-            font-size: 0.9em;
-        }
-
-        .no-results {
-            text-align: center;
-            padding: 60px 20px;
-            color: #666;
-        }
-
-        .no-results-icon {
-            font-size: 4em;
-            margin-bottom: 20px;
-        }
-
-        .instructions {
-            background: #fff3e0;
-            border-left: 4px solid #ff9800;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-        }
-
-        .instructions h3 {
-            color: #ef6c00;
-            margin-bottom: 10px;
-        }
-
-        .instructions ul {
-            margin-left: 20px;
-            color: #666;
-        }
-
-        .instructions li {
-            margin: 5px 0;
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: #e0e0e0;
-            border-radius: 4px;
-            overflow: hidden;
-            margin-top: 20px;
-            display: none;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            transition: width 0.3s;
-            width: 0%;
-        }
-
-        .websocket-status {
+        .connection-status {
             position: fixed;
             top: 20px;
             right: 20px;
@@ -377,20 +292,9 @@
             z-index: 1000;
         }
 
-        .websocket-status.connected {
-            background: #4caf50;
-            color: white;
-        }
-
-        .websocket-status.disconnected {
-            background: #f44336;
-            color: white;
-        }
-
-        .websocket-status.connecting {
-            background: #ff9800;
-            color: white;
-        }
+        .connection-status.online { background: #4caf50; color: white; }
+        .connection-status.offline { background: #f44336; color: white; }
+        .connection-status.connecting { background: #ff9800; color: white; }
 
         .pulse {
             width: 10px;
@@ -413,6 +317,7 @@
             font-size: 0.8em;
             color: #666;
             font-family: monospace;
+            word-break: break-all;
         }
 
         @media (max-width: 768px) {
@@ -427,245 +332,108 @@
             .contracts-grid {
                 grid-template-columns: 1fr;
             }
-            
-            .btn-container {
-                flex-direction: column;
-            }
-            
-            button {
-                width: 100%;
-            }
         }
     </style>
 </head>
 <body>
-    <div class="websocket-status disconnected" id="wsStatus">
+    <div class="connection-status offline" id="connStatus">
         <span class="pulse"></span>
-        <span id="wsStatusText">Desconectado</span>
+        <span id="connText">Offline</span>
     </div>
 
     <div class="container">
         <h1>🚢 Rastreador de Navios</h1>
-        <p class="subtitle">Sistema de Monitoramento de ETA - AISStream.io</p>
-
-        <div class="instructions">
-            <h3>📋 Como usar:</h3>
-            <ul>
-                <li>Cole os dados do Excel no formato: BOOKING/ARMADOR/CONTAINER/NAVIO</li>
-                <li>O sistema identifica automaticamente os campos por padrões</li>
-                <li>Booking: código alfanumérico (tamanho variável)</li>
-                <li>Armador: MSC, CMA CGM, HAPAG LLOYD, HMM, PIL, COSCO, etc.</li>
-                <li>Container: 4 letras + 7 números (padrão ISO)</li>
-            </ul>
-        </div>
+        <p class="subtitle">Sistema de Monitoramento de ETA</p>
 
         <div class="input-section">
-            <h2>Input de Dados</h2>
+            <h2>📋 Input de Dados</h2>
             <textarea id="dataInput" placeholder="Cole aqui os dados do Excel...
-Exemplos:
+Exemplo:
 241ISZ2528034MSCMSDU9826591MSC LUDOVICA
-SSZ1738224CMA CGMCGMU5105732SWANSEA
-6431520260COSCOOERU4120153INSIGHTS
-SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
+SSZ1738224CMA CGMCGMU5105732SWANSEA"></textarea>
             
             <div class="example">
-                <strong>Formato:</strong> BOOKING + ARMADOR + CONTAINER(11 chars) + NAVIO<br>
-                <strong>Container:</strong> 4 letras + 7 números (ex: MSDU9826591, CGMU5105732)
+                <strong>Formato:</strong> BOOKING + ARMADOR + CONTAINER(11 chars) + NAVIO
             </div>
 
             <div class="btn-container">
-                <button class="btn-primary" onclick="processData()">🔍 Buscar Informações</button>
+                <button class="btn-primary" id="btnProcess" onclick="processData()">
+                    🔍 Buscar Informações
+                </button>
                 <button class="btn-secondary" onclick="clearAll()">🗑️ Limpar</button>
-                <button class="btn-secondary" onclick="loadExample()">📋 Carregar Exemplo</button>
-            </div>
-
-            <div class="progress-bar" id="progressBar">
-                <div class="progress-fill" id="progressFill"></div>
+                <button class="btn-secondary" onclick="loadExample()">📋 Exemplo</button>
             </div>
 
             <div id="statusMessage" class="status"></div>
         </div>
 
-        <div class="results-section" id="resultsSection" style="display: none;">
-            <h2>Resultados do Rastreamento</h2>
+        <div id="resultsSection" style="display: none;">
+            <h2>🚢 Resultados do Rastreamento</h2>
             <div class="contracts-grid" id="contractsGrid"></div>
         </div>
 
-        <div class="no-results" id="noResults">
-            <div class="no-results-icon">🚢</div>
+        <div style="text-align: center; padding: 60px 20px; color: #666;" id="emptyState">
+            <div style="font-size: 4em; margin-bottom: 20px;">🚢</div>
             <h3>Nenhum dado processado ainda</h3>
             <p>Cole os dados do Excel e clique em "Buscar Informações" para começar</p>
         </div>
     </div>
 
     <script>
-        // Configuração da API
-        const API_KEY = '88d88bb32b009088f09a386f5d9038473f59f36d';
-        const WS_URL = 'wss://stream.aisstream.io/v0/stream';
-        
-        let ws = null;
-        let trackingShips = new Map();
-        let foundShips = new Map();
-        let contracts = [];
-
-        // Lista de armadores conhecidos (com nomes compostos primeiro para matching correto)
+        // Lista de armadores conhecidos
         const ARMADORES = [
             'HAPAG LLOYD', 'CMA CGM', 'MSC', 'COSCO', 'HMM', 'PIL', 'MAERSK', 
             'ONE', 'EVERGREEN', 'YANG MING', 'HYUNDAI', 'ZIM', 'OOCL', 'APL',
             'HAMBURG SUD', 'HAPAG', 'LLOYD', 'UASC', 'CSAV', 'CCNI', 'K LINE',
-            'MOL', 'NYK', 'SAFMARINE', 'SEALAND', 'HAPAG-LLOYD'
+            'MOL', 'NYK', 'SAFMARINE', 'SEALAND'
         ];
 
-        // Conectar ao WebSocket
-        function connectWebSocket() {
-            updateWSStatus('connecting', 'Conectando...');
+        let contracts = [];
+
+        // Detectar URL automaticamente (mesmo domínio)
+        const BACKEND_URL = window.location.origin;
+
+        // Testar conexão ao carregar
+        window.onload = async function() {
+            await testConnection();
+        };
+
+        async function testConnection() {
+            updateConnectionStatus('connecting', 'Testando...');
             
             try {
-                ws = new WebSocket(WS_URL);
-                
-                ws.onopen = function() {
-                    updateWSStatus('connected', 'Conectado');
-                    console.log('Conectado ao AISStream');
-                };
-                
-                ws.onmessage = function(event) {
-                    const data = JSON.parse(event.data);
-                    handleAISMessage(data);
-                };
-                
-                ws.onerror = function(error) {
-                    console.error('WebSocket error:', error);
-                    updateWSStatus('disconnected', 'Erro de conexão');
-                };
-                
-                ws.onclose = function() {
-                    updateWSStatus('disconnected', 'Desconectado');
-                    setTimeout(connectWebSocket, 5000);
-                };
+                const response = await fetch(`${BACKEND_URL}/health`);
+                if (response.ok) {
+                    updateConnectionStatus('online', 'Conectado');
+                } else {
+                    throw new Error('Health check failed');
+                }
             } catch (error) {
+                updateConnectionStatus('offline', 'Erro de conexão');
                 console.error('Erro ao conectar:', error);
-                updateWSStatus('disconnected', 'Erro');
             }
         }
 
-        function updateWSStatus(status, text) {
-            const statusEl = document.getElementById('wsStatus');
-            const textEl = document.getElementById('wsStatusText');
-            
-            statusEl.className = 'websocket-status ' + status;
-            textEl.textContent = text;
+        function updateConnectionStatus(status, text) {
+            const el = document.getElementById('connStatus');
+            el.className = `connection-status ${status}`;
+            document.getElementById('connText').textContent = text;
         }
 
-        function handleAISMessage(data) {
-            if (data.MessageType === 'ShipStaticData' && data.Message && data.Message.ShipStaticData) {
-                const shipData = data.Message.ShipStaticData;
-                const shipName = shipData.Name ? shipData.Name.trim() : '';
-                const metadata = data.MetaData || {};
-                
-                for (let [searchName, contractId] of trackingShips) {
-                    if (shipName.toUpperCase().includes(searchName.toUpperCase()) || 
-                        searchName.toUpperCase().includes(shipName.toUpperCase())) {
-                        
-                        const eta = shipData.Eta || {};
-                        const etaStr = formatETA(eta);
-                        
-                        const shipInfo = {
-                            name: shipName,
-                            callsign: shipData.CallSign || 'N/A',
-                            imo: shipData.ImoNumber || 'N/A',
-                            destination: shipData.Destination ? shipData.Destination.trim() : 'N/A',
-                            eta: etaStr,
-                            etaRaw: eta,
-                            position: {
-                                lat: metadata.latitude,
-                                lon: metadata.longitude
-                            },
-                            timestamp: metadata.time_utc,
-                            type: getShipType(shipData.Type),
-                            dimensions: shipData.Dimension || {},
-                            draught: shipData.MaximumStaticDraught || 'N/A'
-                        };
-                        
-                        foundShips.set(contractId, shipInfo);
-                        updateContractCard(contractId, shipInfo);
-                        trackingShips.delete(searchName);
-                    }
-                }
-            }
-            
-            if (data.MessageType === 'PositionReport' && data.MetaData) {
-                const mmsi = data.MetaData.MMSI;
-                for (let [contractId, shipInfo] of foundShips) {
-                    if (shipInfo.mmsi === mmsi) {
-                        shipInfo.position = {
-                            lat: data.MetaData.latitude,
-                            lon: data.MetaData.longitude
-                        };
-                        shipInfo.timestamp = data.MetaData.time_utc;
-                        updateContractCard(contractId, shipInfo);
-                    }
-                }
-            }
-        }
-
-        function formatETA(eta) {
-            if (!eta || eta.Month === 0) return 'Não informado';
-            
-            const month = eta.Month.toString().padStart(2, '0');
-            const day = eta.Day.toString().padStart(2, '0');
-            const hour = eta.Hour.toString().padStart(2, '0');
-            const minute = eta.Minute.toString().padStart(2, '0');
-            
-            return `${day}/${month} ${hour}:${minute}`;
-        }
-
-        function getShipType(type) {
-            const types = {
-                30: 'Pesca', 31: 'Pesca', 32: 'Pesca', 33: 'Pesca',
-                34: 'Pesca', 35: 'Pesca', 36: 'Pesca', 37: 'Pesca',
-                60: 'Passageiros', 61: 'Passageiros', 62: 'Passageiros',
-                63: 'Passageiros', 64: 'Passageiros', 65: 'Passageiros',
-                66: 'Passageiros', 67: 'Passageiros', 68: 'Passageiros',
-                69: 'Passageiros', 70: 'Carga', 71: 'Carga - Perigosa',
-                72: 'Carga - Perigosa', 73: 'Carga - Perigosa', 74: 'Carga - Perigosa',
-                75: 'Carga - Perigosa', 76: 'Carga - Perigosa', 77: 'Carga - Perigosa',
-                78: 'Carga - Perigosa', 79: 'Carga', 80: 'Tanque',
-                81: 'Tanque - Perigoso', 82: 'Tanque - Perigoso', 83: 'Tanque - Perigoso',
-                84: 'Tanque - Perigoso', 85: 'Tanque - Perigoso', 86: 'Tanque - Perigoso',
-                87: 'Tanque - Perigoso', 88: 'Tanque - Perigoso', 89: 'Tanque'
-            };
-            return types[type] || 'Desconhecido';
-        }
-
-        // Função para encontrar container (4 letras + 7 números)
         function findContainer(str) {
-            // Regex para container: 4 letras seguidas de 7 números
             const regex = /[A-Z]{4}\d{7}/;
             const match = str.match(regex);
-            if (match) {
-                return {
-                    container: match[0],
-                    index: match.index
-                };
-            }
-            return null;
+            return match ? { container: match[0], index: match.index } : null;
         }
 
-        // Função para encontrar armador
         function findArmador(str) {
             const upperStr = str.toUpperCase();
+            const sorted = [...ARMADORES].sort((a, b) => b.length - a.length);
             
-            // Ordenar armadores por tamanho (maior primeiro) para evitar match parcial
-            const sortedArmadores = [...ARMADORES].sort((a, b) => b.length - a.length);
-            
-            for (let armador of sortedArmadores) {
+            for (let armador of sorted) {
                 const idx = upperStr.indexOf(armador);
                 if (idx !== -1) {
-                    return {
-                        armador: armador,
-                        index: idx,
-                        endIndex: idx + armador.length
-                    };
+                    return { armador, index: idx, endIndex: idx + armador.length };
                 }
             }
             return null;
@@ -679,151 +447,123 @@ SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
                 line = line.trim();
                 if (line.length < 20) continue;
                 
-                // 1. Encontrar container (âncora fixa - sempre 11 caracteres)
                 const containerInfo = findContainer(line);
-                if (!containerInfo) {
-                    console.warn('Container não encontrado na linha:', line);
-                    continue;
-                }
+                if (!containerInfo) continue;
                 
                 const container = containerInfo.container;
                 const containerStart = containerInfo.index;
                 
-                // 2. Encontrar armador (pode vir antes ou depois do booking)
                 const armadorInfo = findArmador(line);
                 let armador = 'N/A';
-                let armadorEnd = -1;
                 
                 if (armadorInfo) {
                     armador = armadorInfo.armador;
-                    armadorEnd = armadorInfo.endIndex;
                 }
                 
-                // 3. Identificar booking e navio
                 let booking = '';
                 let navio = '';
                 
-                // Estratégia: O booking geralmente vem antes do armador ou antes do container
-                // O navio geralmente vem depois do container
-                
                 if (armadorInfo && armadorInfo.index < containerStart) {
-                    // Armador vem antes do container
-                    // Booking vem antes do armador
                     booking = line.substring(0, armadorInfo.index).trim();
-                    
-                    // Navio vem depois do container (até o final)
                     navio = line.substring(containerStart + 11).trim();
                 } else {
-                    // Armador não encontrado ou vem depois
-                    // Assumir que booking vem antes do container
                     booking = line.substring(0, containerStart).trim();
-                    
-                    // Remover armador do booking se estiver lá
                     if (armadorInfo && booking.includes(armador)) {
                         booking = booking.replace(armador, '').trim();
                     }
-                    
-                    // Navio vem depois do container
-                    let navioPart = line.substring(containerStart + 11).trim();
-                    
-                    // Se armador estiver depois do container, separar do navio
-                    if (armadorInfo && armadorInfo.index > containerStart) {
-                        // Armador está entre container e navio ou no navio
-                        navio = navioPart;
-                    } else {
-                        navio = navioPart;
-                    }
+                    navio = line.substring(containerStart + 11).trim();
                 }
                 
-                // Limpar booking (remover possíveis resíduos do armador)
-                if (armador !== 'N/A') {
-                    booking = booking.replace(new RegExp(armador, 'gi'), '').trim();
-                }
-                
-                // Se booking estiver vazio, tentar extrair do início até o armador
                 if (!booking && armadorInfo) {
                     booking = line.substring(0, armadorInfo.index).trim();
                 }
                 
-                // Validar dados mínimos
                 if (booking && container && navio) {
                     parsed.push({
                         id: 'CTR-' + (parsed.length + 1).toString().padStart(3, '0'),
-                        booking: booking,
-                        armador: armador,
-                        container: container,
-                        navio: navio,
-                        searchName: navio.toUpperCase(),
-                        raw: line // para debug
+                        booking,
+                        armador,
+                        container,
+                        navio,
+                        searchName: navio.toUpperCase()
                     });
-                } else {
-                    console.warn('Dados incompletos:', {booking, armador, container, navio, line});
                 }
             }
             
             return parsed;
         }
 
-        function processData() {
+        async function processData() {
             const input = document.getElementById('dataInput').value;
-            const statusDiv = document.getElementById('statusMessage');
-            const progressBar = document.getElementById('progressBar');
-            const progressFill = document.getElementById('progressFill');
+            const btn = document.getElementById('btnProcess');
             
             if (!input.trim()) {
-                showStatus('Por favor, cole os dados do Excel primeiro!', 'error');
+                showStatus('Cole os dados do Excel primeiro!', 'error');
                 return;
             }
-            
+
+            btn.disabled = true;
             contracts = parseInputData(input);
             
             if (contracts.length === 0) {
-                showStatus('Nenhum contrato válido encontrado. Verifique o formato dos dados.', 'error');
+                showStatus('Nenhum contrato válido encontrado!', 'error');
+                btn.disabled = false;
                 return;
             }
-            
-            progressBar.style.display = 'block';
-            statusDiv.style.display = 'block';
-            statusDiv.className = 'status loading';
-            statusDiv.innerHTML = '<div class="spinner"></div> Processando ' + contracts.length + ' contratos...';
-            
-            trackingShips.clear();
-            foundShips.clear();
+
+            showStatus(`Processando ${contracts.length} contratos...`, 'loading');
             
             const grid = document.getElementById('contractsGrid');
             grid.innerHTML = '';
             
-            contracts.forEach((contract, index) => {
-                const card = createContractCard(contract);
-                grid.appendChild(card);
-                
-                trackingShips.set(contract.searchName, contract.id);
-                
-                setTimeout(() => {
-                    const progress = ((index + 1) / contracts.length) * 100;
-                    progressFill.style.width = progress + '%';
-                }, index * 100);
+            contracts.forEach(contract => {
+                grid.appendChild(createContractCard(contract));
             });
             
             document.getElementById('resultsSection').style.display = 'block';
-            document.getElementById('noResults').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'none';
             
-            subscribeToShips();
+            // Buscar navios sequencialmente
+            for (let i = 0; i < contracts.length; i++) {
+                const contract = contracts[i];
+                updateCardStatus(contract.id, 'searching', 'Buscando...');
+                
+                try {
+                    const response = await fetch(`${BACKEND_URL}/api/ship/${encodeURIComponent(contract.navio)}`);
+                    
+                    if (response.status === 404) {
+                        updateCardStatus(contract.id, 'error', 'Não encontrado');
+                        updateCardETA(contract.id, 'Sem sinal AIS', 'O navio pode estar fora de área ou desligado');
+                    } else if (response.ok) {
+                        const data = await response.json();
+                        updateCardWithData(contract.id, data);
+                    } else {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                } catch (error) {
+                    console.error('Erro:', error);
+                    updateCardStatus(contract.id, 'error', 'Erro');
+                }
+                
+                // Delay entre requisições
+                if (i < contracts.length - 1) {
+                    await new Promise(r => setTimeout(r, 1500));
+                }
+            }
             
-            setTimeout(() => {
-                checkMissingShips();
-            }, 30000);
+            showStatus('Processamento concluído!', 'success');
+            btn.disabled = false;
         }
 
         function createContractCard(contract) {
             const card = document.createElement('div');
             card.className = 'contract-card';
-            card.id = 'card-' + contract.id;
+            card.id = `card-${contract.id}`;
             
             card.innerHTML = `
                 <div class="contract-header">
                     <span class="contract-number">${contract.id}</span>
-                    <span class="status-badge status-tracking" id="status-${contract.id}">Rastreando...</span>
+                    <span class="status-badge status-waiting" id="status-${contract.id}">Aguardando</span>
                 </div>
                 
                 <div class="ship-name" id="shipname-${contract.id}">⏳ ${contract.navio}</div>
@@ -843,163 +583,87 @@ SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE"></textarea>
                     <span class="info-value">${contract.container}</span>
                 </div>
                 
-                <div class="info-row">
-                    <span class="info-label">🚢 Navio:</span>
-                    <span class="info-value">${contract.navio}</span>
-                </div>
-                
                 <div class="eta-highlight" id="eta-${contract.id}">
-                    <div class="eta-label">ETA Estimado</div>
-                    <div class="eta-value">⏳ Buscando...</div>
+                    <div class="eta-label">Status</div>
+                    <div class="eta-value" style="font-size: 1.2em;">Aguardando...</div>
                 </div>
                 
-                <div class="position-info" id="position-${contract.id}" style="display: none;">
-                    Posição: <span id="coords-${contract.id}">--</span><br>
-                    Última atualização: <span id="time-${contract.id}">--</span>
-                </div>
-                
-                <div class="debug-info">
-                    Raw: ${contract.raw.substring(0, 50)}${contract.raw.length > 50 ? '...' : ''}
-                </div>
+                <div class="debug-info" style="display: none;" id="debug-${contract.id}"></div>
             `;
             
             return card;
         }
 
-        function updateContractCard(contractId, shipInfo) {
-            const statusBadge = document.getElementById('status-' + contractId);
-            const shipName = document.getElementById('shipname-' + contractId);
-            const etaDiv = document.getElementById('eta-' + contractId);
-            const positionDiv = document.getElementById('position-' + contractId);
-            const coords = document.getElementById('coords-' + contractId);
-            const time = document.getElementById('time-' + contractId);
-            
-            if (statusBadge) {
-                statusBadge.className = 'status-badge status-found';
-                statusBadge.textContent = 'Encontrado';
+        function updateCardStatus(contractId, status, text) {
+            const badge = document.getElementById(`status-${contractId}`);
+            if (badge) {
+                badge.className = `status-badge status-${status}`;
+                badge.textContent = text;
             }
-            
-            if (shipName) {
-                shipName.textContent = '🚢 ' + shipInfo.name;
-            }
-            
+        }
+
+        function updateCardETA(contractId, title, subtitle) {
+            const etaDiv = document.getElementById(`eta-${contractId}`);
             if (etaDiv) {
                 etaDiv.innerHTML = `
+                    <div class="eta-label">Status</div>
+                    <div class="eta-value" style="font-size: 1.2em;">${title}</div>
+                    <div style="font-size: 0.8em; margin-top: 5px; opacity: 0.9;">${subtitle}</div>
+                `;
+            }
+        }
+
+        function updateCardWithData(contractId, shipData) {
+            updateCardStatus(contractId, 'found', 'Encontrado');
+            
+            const shipName = document.getElementById(`shipname-${contractId}`);
+            if (shipName) shipName.textContent = '🚢 ' + shipData.name;
+            
+            const etaDiv = document.getElementById(`eta-${contractId}`);
+            if (etaDiv) {
+                let etaText = 'Não informado';
+                if (shipData.eta && shipData.eta.Month !== 0) {
+                    const eta = shipData.eta;
+                    etaText = `${eta.Day.toString().padStart(2, '0')}/${eta.Month.toString().padStart(2, '0')} ${eta.Hour.toString().padStart(2, '0')}:${eta.Minute.toString().padStart(2, '0')}`;
+                }
+                
+                etaDiv.innerHTML = `
                     <div class="eta-label">ETA no Destino</div>
-                    <div class="eta-value">${shipInfo.eta}</div>
+                    <div class="eta-value">${etaText}</div>
                     <div style="font-size: 0.8em; margin-top: 5px; opacity: 0.9;">
-                        Destino: ${shipInfo.destination}
+                        Destino: ${shipData.destination || 'N/A'}
                     </div>
                 `;
             }
-            
-            if (positionDiv && shipInfo.position && shipInfo.position.lat) {
-                positionDiv.style.display = 'block';
-                coords.textContent = `${shipInfo.position.lat.toFixed(4)}, ${shipInfo.position.lon.toFixed(4)}`;
-                time.textContent = new Date(shipInfo.timestamp).toLocaleString('pt-BR');
-            }
-        }
-
-        function subscribeToShips() {
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                showStatus('Conectando ao serviço de rastreamento...', 'info');
-                connectWebSocket();
-                
-                setTimeout(() => {
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        sendSubscription();
-                    }
-                }, 2000);
-            } else {
-                sendSubscription();
-            }
-        }
-
-        function sendSubscription() {
-            const subscription = {
-                APIKey: API_KEY,
-                BoundingBoxes: [[[-90, -180], [90, 180]]],
-                FilterMessageTypes: ["ShipStaticData", "PositionReport"]
-            };
-            
-            ws.send(JSON.stringify(subscription));
-            
-            showStatus(`Rastreando ${contracts.length} navios em tempo real... Aguarde os resultados (pode levar até 30s)`, 'success');
-        }
-
-        function checkMissingShips() {
-            let missing = 0;
-            for (let contract of contracts) {
-                if (!foundShips.has(contract.id)) {
-                    missing++;
-                    const statusBadge = document.getElementById('status-' + contract.id);
-                    const etaDiv = document.getElementById('eta-' + contract.id);
-                    
-                    if (statusBadge) {
-                        statusBadge.className = 'status-badge status-error';
-                        statusBadge.textContent = 'Não encontrado';
-                    }
-                    
-                    if (etaDiv) {
-                        etaDiv.innerHTML = `
-                            <div class="eta-label">Status</div>
-                            <div class="eta-value" style="font-size: 1.2em;">❌ Sem sinal AIS</div>
-                            <div style="font-size: 0.8em; margin-top: 5px;">
-                                O navio pode estar fora de área de cobertura ou desligado
-                            </div>
-                        `;
-                    }
-                }
-            }
-            
-            if (missing > 0) {
-                showStatus(`${contracts.length - missing} de ${contracts.length} navios encontrados. ${missing} navio(s) sem sinal atual.`, 'info');
-            } else {
-                showStatus(`Todos os ${contracts.length} navios encontrados com sucesso!`, 'success');
-            }
-            
-            document.getElementById('progressBar').style.display = 'none';
         }
 
         function showStatus(message, type) {
             const statusDiv = document.getElementById('statusMessage');
-            statusDiv.className = 'status ' + type;
-            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            
+            if (type === 'loading') {
+                statusDiv.innerHTML = `<div class="spinner"></div> ${message}`;
+            } else {
+                statusDiv.textContent = message;
+            }
+            
             statusDiv.style.display = 'block';
         }
 
         function clearAll() {
             document.getElementById('dataInput').value = '';
             document.getElementById('resultsSection').style.display = 'none';
-            document.getElementById('noResults').style.display = 'block';
+            document.getElementById('emptyState').style.display = 'block';
             document.getElementById('statusMessage').style.display = 'none';
-            document.getElementById('progressBar').style.display = 'none';
-            document.getElementById('progressFill').style.width = '0%';
-            
-            trackingShips.clear();
-            foundShips.clear();
             contracts = [];
         }
 
         function loadExample() {
-            const example = `241ISZ2528034MSCMSDU9826591MSC LUDOVICA
+            document.getElementById('dataInput').value = `241ISZ2528034MSCMSDU9826591MSC LUDOVICA
 SSZ1738224CMA CGMCGMU5105732SWANSEA
 6431520260COSCOOERU4120153INSIGHTS
 SZ1750883CMA CGMCGMU5542157CMA CGM LISA MARIE`;
-            
-            document.getElementById('dataInput').value = example;
-            showStatus('Exemplo carregado! Clique em "Buscar Informações" para processar.', 'info');
         }
-
-        window.onload = function() {
-            connectWebSocket();
-        };
-
-        window.onbeforeunload = function() {
-            if (ws) {
-                ws.close();
-            }
-        };
     </script>
 </body>
 </html>
